@@ -1,0 +1,17 @@
+{
+  "name": "HttpUpdate",
+  "keywords": "esp32, ota http/https software update",
+  "description": "My own ESP32 https/https ota software update library",
+  "authors":
+  {
+    "name": "Olivier Perron"
+  },
+  "repository":
+  {
+    "type": "git",
+    "url": "https://github.com/freeasabeer/HttpUpdate.git"
+  },
+  "version": "1.0.0",
+  "frameworks": "arduino",
+  "platforms": ["espressif32"]
+}
