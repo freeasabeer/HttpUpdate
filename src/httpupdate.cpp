@@ -3,65 +3,60 @@
 #include <Update.h>
 #include "httpupdate.h"
 
-static const char CACert [] PROGMEM = R"CERT(
------BEGIN CERTIFICATE-----
-MIIFazCCA1OgAwIBAgIRAIIQz7DSQONZRGPgu2OCiwAwDQYJKoZIhvcNAQELBQAw
-TzELMAkGA1UEBhMCVVMxKTAnBgNVBAoTIEludGVybmV0IFNlY3VyaXR5IFJlc2Vh
-cmNoIEdyb3VwMRUwEwYDVQQDEwxJU1JHIFJvb3QgWDEwHhcNMTUwNjA0MTEwNDM4
-WhcNMzUwNjA0MTEwNDM4WjBPMQswCQYDVQQGEwJVUzEpMCcGA1UEChMgSW50ZXJu
-ZXQgU2VjdXJpdHkgUmVzZWFyY2ggR3JvdXAxFTATBgNVBAMTDElTUkcgUm9vdCBY
-MTCCAiIwDQYJKoZIhvcNAQEBBQADggIPADCCAgoCggIBAK3oJHP0FDfzm54rVygc
-h77ct984kIxuPOZXoHj3dcKi/vVqbvYATyjb3miGbESTtrFj/RQSa78f0uoxmyF+
-0TM8ukj13Xnfs7j/EvEhmkvBioZxaUpmZmyPfjxwv60pIgbz5MDmgK7iS4+3mX6U
-A5/TR5d8mUgjU+g4rk8Kb4Mu0UlXjIB0ttov0DiNewNwIRt18jA8+o+u3dpjq+sW
-T8KOEUt+zwvo/7V3LvSye0rgTBIlDHCNAymg4VMk7BPZ7hm/ELNKjD+Jo2FR3qyH
-B5T0Y3HsLuJvW5iB4YlcNHlsdu87kGJ55tukmi8mxdAQ4Q7e2RCOFvu396j3x+UC
-B5iPNgiV5+I3lg02dZ77DnKxHZu8A/lJBdiB3QW0KtZB6awBdpUKD9jf1b0SHzUv
-KBds0pjBqAlkd25HN7rOrFleaJ1/ctaJxQZBKT5ZPt0m9STJEadao0xAH0ahmbWn
-OlFuhjuefXKnEgV4We0+UXgVCwOPjdAvBbI+e0ocS3MFEvzG6uBQE3xDk3SzynTn
-jh8BCNAw1FtxNrQHusEwMFxIt4I7mKZ9YIqioymCzLq9gwQbooMDQaHWBfEbwrbw
-qHyGO0aoSCqI3Haadr8faqU9GY/rOPNk3sgrDQoo//fb4hVC1CLQJ13hef4Y53CI
-rU7m2Ys6xt0nUW7/vGT1M0NPAgMBAAGjQjBAMA4GA1UdDwEB/wQEAwIBBjAPBgNV
-HRMBAf8EBTADAQH/MB0GA1UdDgQWBBR5tFnme7bl5AFzgAiIyBpY9umbbjANBgkq
-hkiG9w0BAQsFAAOCAgEAVR9YqbyyqFDQDLHYGmkgJykIrGF1XIpu+ILlaS/V9lZL
-ubhzEFnTIZd+50xx+7LSYK05qAvqFyFWhfFQDlnrzuBZ6brJFe+GnY+EgPbk6ZGQ
-3BebYhtF8GaV0nxvwuo77x/Py9auJ/GpsMiu/X1+mvoiBOv/2X/qkSsisRcOj/KK
-NFtY2PwByVS5uCbMiogziUwthDyC3+6WVwW6LLv3xLfHTjuCvjHIInNzktHCgKQ5
-ORAzI4JMPJ+GslWYHb4phowim57iaztXOoJwTdwJx4nLCgdNbOhdjsnvzqvHu7Ur
-TkXWStAmzOVyyghqpZXjFaH3pO3JLF+l+/+sKAIuvtd7u+Nxe5AW0wdeRlN8NwdC
-jNPElpzVmbUq4JUagEiuTDkHzsxHpFKVK7q4+63SM1N95R1NbdWhscdCb+ZAJzVc
-oyi3B43njTOQ5yOf+1CceWxG1bQVs5ZufpsMljq4Ui0/1lvh+wjChP4kqKOJ2qxq
-4RgqsahDYVvTH9w7jXbyLeiNdd8XM2w9U/t7y0Ff/9yi0GE44Za4rF2LN9d11TPA
-mRGunUHBcnWEvgJBQl9nJEiU0Zsnvgc/ubhPgXRR4Xq37Z0j4r7g1SgEEzwxA57d
-emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
------END CERTIFICATE-----
-)CERT";
 
-typedef struct {
-  char *host;
-  uint16_t port;
-  char *uri;
-  bool ssl;
-} url_t;
+// Public methods
+ESP32HttpUpdate::ESP32HttpUpdate() {
+  _CA_cert = nullptr;
+  _use_insecure = false;
+  _client = nullptr;
+}
+ESP32HttpUpdate::ESP32HttpUpdate(Client &client) {
+  _CA_cert = nullptr;
+  _use_insecure = false;
+  _client = &client;
+}
 
-void update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(const char* param));
-void parseurl(char *url, url_t *url_elts);
+void ESP32HttpUpdate::setCACert(const char *rootCA) {
+  _CA_cert = rootCA;
+}
 
+void ESP32HttpUpdate::setInsecure() {
+  _use_insecure = true;
+}
 
-void httpUpdate(char *url, void (*cb)(const char* param)) {
+void ESP32HttpUpdate::httpUpdate(String &url, void (*cb)(const char* param)) {
+  httpUpdate((char *)url.c_str(), cb);
+}
+
+void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {
   url_t url_elts;
   parseurl(url, &url_elts);
-  if (url_elts.ssl) {
-    WiFiClientSecure sclient;
-    sclient.setCACert(CACert);
-    update(sclient, url_elts.host, url_elts.port, url_elts.uri, cb);
+  if (_debug) Serial.printf("httpUpdate: %s://%s:%d%s\n",(url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
+  if (_client) {
+      if (_debug) Serial.println("httpUpdate: use provided client");
+      update(*_client, url_elts.host, url_elts.port, url_elts.uri, cb);
   } else {
-    WiFiClient client;
-    update(client, url_elts.host, url_elts.port, url_elts.uri, cb);
+    if (url_elts.ssl) {
+      WiFiClientSecure sclient;
+      if ((!_use_insecure)&&(_CA_cert)) {
+        if (_debug) {Serial.println("httpUpdate: Setting CACert");Serial.println(_CA_cert);}
+        sclient.setCACert(_CA_cert);
+      } else if (_use_insecure) {
+        if (_debug) Serial.println("httpUpdate: Setting Insecure");
+        sclient.setInsecure();
+      }
+      if (_debug) Serial.println("httpUpdate: starting update with sclient (https)");
+      update(sclient, url_elts.host, url_elts.port, url_elts.uri, cb);
+    } else {
+      WiFiClient client;
+      Serial.println("httpUpdate: starting update with client (http)");
+      update(client, url_elts.host, url_elts.port, url_elts.uri, cb);
+    }
   }
 }
 
-void parseurl(char *url, url_t *url_elts) {
+// Private methods
+void ESP32HttpUpdate::parseurl(char *url, url_t *url_elts) {
   char *host = nullptr;
   char *ptr = nullptr;
   url_elts->ssl = false;
@@ -89,11 +84,11 @@ void parseurl(char *url, url_t *url_elts) {
 }
 
 // Utility to extract header value from headers
-String getHeaderValue(String header, String headerName) {
+String ESP32HttpUpdate::getHeaderValue(String header, String headerName) {
   return header.substring(strlen(headerName.c_str()));
 }
 
-void update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(const char* param)) {
+void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(const char* param)) {
 
   long contentLength = 0;
   bool isValidContentType = false;
@@ -122,6 +117,7 @@ void update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(con
       if (millis() - timeout > 5000) {
         Serial.println("Client Timeout !");
         client.stop();
+        if (host) free(host);
         return;
       }
     }
@@ -239,4 +235,5 @@ void update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(con
     Serial.println("There was no content in the response");
     client.flush();
   }
+  if (host) free(host);
 }
