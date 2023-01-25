@@ -21,6 +21,13 @@ void setup() {
 #ifdef LED_BUILTIN
     digitalWrite(LED_BUILTIN, HIGH);
 #endif
+    Serial.println("Connecting to Wi-Fi...");
+    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+    while (WiFi.status() != WL_CONNECTED) {
+      delay(500);
+      Serial.print(".");
+    }
+    Serial.println("Wi-Fi connected");
     return;
   }
   // Put your own application set-up code after this line
@@ -30,7 +37,8 @@ void setup() {
 
 void loop() {
   if (pinOTAvalue == LOW) {
-    httpUpdate("https://www.myserver.com:8443/device/firmware.bin", &display_ota_ip);
+    ESP32HttpUpdate esp32Update;
+    esp32Update.httpUpdate("http://www.myserver.com:8080/device/firmware.bin", &display_ota_ip);
     return;
   }
 
