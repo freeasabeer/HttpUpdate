@@ -1,12 +1,15 @@
 #######################################
 # Datatypes (KEYWORD1)
 #######################################
+url_t       KEYWORD1
 
 #######################################
 # Methods and Functions (KEYWORD2)
 #######################################
 
 httpUpdate	KEYWORD2
+setCACert	KEYWORD2
+setInsecure	KEYWORD2
 
 #######################################
 # Constants (LITERAL1)

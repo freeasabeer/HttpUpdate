@@ -93,7 +93,7 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
   long contentLength = 0;
   bool isValidContentType = false;
 
-  Serial.println("Connecting to: " + String(host));
+  Serial.printf("Connecting to: %s:%d\n", host, port);
   // Connect to server
   if (client.connect(host, port)) {
     // Connection Succeed.
