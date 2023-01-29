@@ -3,6 +3,13 @@
 #include <Update.h>
 #include "httpupdate.h"
 
+static void (*cb)(const char *s) = nullptr;
+void workaround(ESP32HttpUpdate *ptr) {
+  cb = ptr->_cbLegacy;
+}
+void cbHelper() {
+  if (cb) cb("OTA start");
+}
 
 // Public methods
 ESP32HttpUpdate::ESP32HttpUpdate() {
@@ -36,6 +43,24 @@ void ESP32HttpUpdate::onError(void (*cbOnError)(int e)) {
 void ESP32HttpUpdate::onProgress(void (*cbOnProgress)(int c, int t)) {
   _cbProgress = cbOnProgress;
 }
+
+/*
+void ESP32HttpUpdate::cbHelper() {
+  if (_cbLegacy) _cbLegacy("OTA start");
+}
+*/
+
+void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {   // Deprecated, kept for legacy compatibility
+  _cbLegacy = cb;
+  _cbStart = &cbHelper;
+  workaround(this);
+  httpUpdate(url, false);
+}
+
+void ESP32HttpUpdate::httpUpdate(String &url, void (*cb)(const char* param)) { // Deprecated, kept for legacy compatibility
+  httpUpdate((char *)url.c_str(), cb);
+}
+
 
 void ESP32HttpUpdate::httpUpdate(String &url, bool fsimg) {
   httpUpdate((char *)url.c_str(), fsimg);

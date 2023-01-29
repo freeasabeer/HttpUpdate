@@ -6,12 +6,15 @@ class ESP32HttpUpdate {
     ESP32HttpUpdate(Client &client);
     void setCACert(const char *rootCA);
     void setInsecure();
+    void httpUpdate(char *url, void (*cb)(const char* param) = nullptr);   // Deprecated, kept for legacy compatibility
+    void httpUpdate(String &url, void (*cb)(const char* param) = nullptr); // Deprecated, kept for legacy compatibility
     void httpUpdate(char *url, bool spiffs = false);
     void httpUpdate(String &url, bool spiffs = false);
     void onStart(void (*cbOnStart)(void));
     void onEnd(void (*cbOnEnd)(void));
     void onError(void (*cbOnError)(int e));
     void onProgress(void (*cbOnProgress)(int c, int t));
+    void (*_cbLegacy)(const char *s) = nullptr;
 
   private:
     typedef struct {
