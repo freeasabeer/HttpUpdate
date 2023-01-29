@@ -24,17 +24,31 @@ void ESP32HttpUpdate::setInsecure() {
   _use_insecure = true;
 }
 
-void ESP32HttpUpdate::httpUpdate(String &url, void (*cb)(const char* param)) {
-  httpUpdate((char *)url.c_str(), cb);
+void ESP32HttpUpdate::onStart(void (*cbOnStart)(void)) {
+  _cbStart = cbOnStart;
+}
+void ESP32HttpUpdate::onEnd(void (*cbOnEnd)(void)) {
+  _cbEnd = cbOnEnd;
+}
+void ESP32HttpUpdate::onError(void (*cbOnError)(int e)) {
+  _cbError = cbOnError;
+}
+void ESP32HttpUpdate::onProgress(void (*cbOnProgress)(int c, int t)) {
+  _cbProgress = cbOnProgress;
 }
 
-void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {
+void ESP32HttpUpdate::httpUpdate(String &url, bool fsimg) {
+  httpUpdate((char *)url.c_str(), fsimg);
+}
+
+void ESP32HttpUpdate::httpUpdate(char *url, bool fsimg) {
   url_t url_elts;
+  _fsimg = fsimg;
   parseurl(url, &url_elts);
   if (_debug) Serial.printf("httpUpdate: %s://%s:%d%s\n",(url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
   if (_client) {
       if (_debug) Serial.println("httpUpdate: use provided client");
-      update(*_client, url_elts.host, url_elts.port, url_elts.uri, cb);
+      update(*_client, url_elts.host, url_elts.port, url_elts.uri);
   } else {
     if (url_elts.ssl) {
       WiFiClientSecure sclient;
@@ -46,11 +60,11 @@ void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {
         sclient.setInsecure();
       }
       if (_debug) Serial.println("httpUpdate: starting update with sclient (https)");
-      update(sclient, url_elts.host, url_elts.port, url_elts.uri, cb);
+      update(sclient, url_elts.host, url_elts.port, url_elts.uri);
     } else {
       WiFiClient client;
       Serial.println("httpUpdate: starting update with client (http)");
-      update(client, url_elts.host, url_elts.port, url_elts.uri, cb);
+      update(client, url_elts.host, url_elts.port, url_elts.uri);
     }
   }
 }
@@ -88,7 +102,7 @@ String ESP32HttpUpdate::getHeaderValue(String header, String headerName) {
   return header.substring(strlen(headerName.c_str()));
 }
 
-void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *uri, void (*cb)(const char* param)) {
+void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *uri) {
 
   long contentLength = 0;
   bool isValidContentType = false;
@@ -195,12 +209,13 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
   // check contentLength and content type
   if (contentLength && isValidContentType) {
     // Check if there is enough to OTA Update
-    bool canBegin = Update.begin(contentLength);
+    if(_cbProgress) Update.onProgress(_cbProgress);
+    bool canBegin = Update.begin(contentLength, (_fsimg)?U_SPIFFS:U_FLASH);
 
     // If yes, begin
     if (canBegin) {
       Serial.println("Begin OTA. This may take 2 - 5 mins to complete. Things might be quite for a while.. Patience!");
-      if(cb) cb("OTA update started...");
+      if(_cbStart) _cbStart();
       // No activity would appear on the Serial monitor
       // So be patient. This may take 2 - 5mins to complete
       size_t written = Update.writeStream(client);
@@ -216,13 +231,16 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
       if (Update.end()) {
         Serial.println("OTA done!");
         if (Update.isFinished()) {
+          if (_cbEnd) _cbEnd();
           Serial.println("Update successfully completed. Rebooting.");
           ESP.restart();
         } else {
           Serial.println("Update not finished? Something went wrong!");
         }
       } else {
-        Serial.println("Error Occurred. Error #: " + String(Update.getError()));
+        uint8_t err = Update.getError();
+        Serial.println("Error Occurred. Error #: " + String(err));
+        if (_cbError) _cbError(err);
       }
     } else {
       // not enough space to begin OTA
