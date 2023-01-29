@@ -44,12 +44,6 @@ void ESP32HttpUpdate::onProgress(void (*cbOnProgress)(int c, int t)) {
   _cbProgress = cbOnProgress;
 }
 
-/*
-void ESP32HttpUpdate::cbHelper() {
-  if (_cbLegacy) _cbLegacy("OTA start");
-}
-*/
-
 void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {   // Deprecated, kept for legacy compatibility
   _cbLegacy = cb;
   _cbStart = &cbHelper;
