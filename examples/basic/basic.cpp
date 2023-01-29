@@ -5,7 +5,7 @@
 #define WIFI_KEY "MyOwnKey"
 
 static int pinOTAvalue;
-void display_ota_ip(const char *ip);
+ESP32HttpUpdate esp32Update;
 
 void setup() {
   Serial.begin(115200);
@@ -34,25 +34,34 @@ void setup() {
 
 }
 
+void httpupdate_started_cb() {
+  Serial.println("Firmware OTA update started");
+}
+void httpupdate_finished_cb() {
+  Serial.println("Firmware OTA update OK\nReboot");
+  delay(1000);
+}
+void httpupdate_progress_cb(int cur, int total) {
+  int p;
+  p = (cur / (total / 100));
+  Serial.printf("Progress: %u%%\r", p);
+}
+void httpupdate_error_cb(int err) {
+  Serial.printf("Firmware OTA update fatal error\nCode: %d\n", err);
+}
 
 void loop() {
   if (pinOTAvalue == LOW) {
-    ESP32HttpUpdate esp32Update;
-    esp32Update.httpUpdate("http://www.myserver.com:8080/device/firmware.bin", &display_ota_ip);
+    esp32Update.setWatchdog(3*60*1000);
+    esp32update.onStart(httpupdate_started_cb);
+    esp32update.onEnd(httpupdate_finished_cb);
+    esp32update.onProgress(httpupdate_progress_cb);
+    esp32update.onError(httpupdate_error_cb);
+    esp32Update.httpUpdate("http://www.myserver.com:8080/device/firmware.bin", false);
     return;
   }
 
   // Put your own application loop code after this line
 
-
-}
-
-void display_ota_ip(const char *ip) {
-
-  // Put your own IP address display code after this line
-  // It can be a Serial print to the console (which is already done by the MyOwnOTA library),
-  // a print out on a LCD display or whatever else display.
-  // It can be through a message sent to Telegram, to a Gotify server: possibilties are endless
-  Serial.printf("Ready for OTA connection on: %s/n", ip);
 
 }

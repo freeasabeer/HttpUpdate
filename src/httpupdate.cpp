@@ -4,10 +4,10 @@
 #include "httpupdate.h"
 
 static void (*cb)(const char *s) = nullptr;
-void workaround(ESP32HttpUpdate *ptr) {
+static void workaround(ESP32HttpUpdate *ptr) {
   cb = ptr->_cbLegacy;
 }
-void cbHelper() {
+static void cbHelper() {
   if (cb) cb("OTA start");
 }
 
@@ -42,6 +42,27 @@ void ESP32HttpUpdate::onError(void (*cbOnError)(int e)) {
 }
 void ESP32HttpUpdate::onProgress(void (*cbOnProgress)(int c, int t)) {
   _cbProgress = cbOnProgress;
+}
+
+static void ota_watchdog(TimerHandle_t xTimer)  {
+  Serial.printf("httpUpdate: OTA watchdog");
+  ESP.restart();
+}
+void ESP32HttpUpdate::setWatchdog(unsigned long ms) {
+  if(_WatchDogTimer)
+    xTimerDelete(_WatchDogTimer, 0);
+
+  _WatchDogTimer = xTimerCreate("OTAWD", pdMS_TO_TICKS(ms), pdFALSE, (void*)0, &ota_watchdog);
+  if(_WatchDogTimer)
+    if (_debug) Serial.println("Watchdog timer created.");
+  else
+    if (_debug) Serial.println("Failed to create Watchdog timer.");
+}
+void ESP32HttpUpdate::stopWatchdog() {
+  if (_WatchDogTimer) {
+    xTimerStop(_WatchDogTimer, 0);
+    if (_debug) Serial.println("Watchdog timer stopped.");
+  }
 }
 
 void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {   // Deprecated, kept for legacy compatibility
@@ -125,6 +146,13 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
 
   long contentLength = 0;
   bool isValidContentType = false;
+
+  if(_WatchDogTimer)
+    if (xTimerStart(_WatchDogTimer, 0))
+      if (_debug) Serial.println("Watchdog timer started.");
+    else
+      if (_debug) Serial.println("Failed to start Watchdog timer.");
+
 
   Serial.printf("Connecting to: %s:%d\n", host, port);
   // Connect to server

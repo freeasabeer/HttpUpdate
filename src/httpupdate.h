@@ -6,6 +6,8 @@ class ESP32HttpUpdate {
     ESP32HttpUpdate(Client &client);
     void setCACert(const char *rootCA);
     void setInsecure();
+    void setWatchdog(unsigned long ms);
+    void stopWatchdog();
     void httpUpdate(char *url, void (*cb)(const char* param) = nullptr);   // Deprecated, kept for legacy compatibility
     void httpUpdate(String &url, void (*cb)(const char* param) = nullptr); // Deprecated, kept for legacy compatibility
     void httpUpdate(char *url, bool spiffs = false);
@@ -31,9 +33,10 @@ class ESP32HttpUpdate {
     bool _use_insecure;
     Client *_client;
     bool _debug = false;
-    void (*_cbStart)(void)= nullptr;
+    void (*_cbStart)(void) = nullptr;
     void (*_cbEnd)(void) = nullptr;
     void (*_cbError)(int e) = nullptr;
     void (*_cbProgress)(int c, int t) = nullptr;
     bool _fsimg = false;
+    TimerHandle_t _WatchDogTimer = NULL;
 };

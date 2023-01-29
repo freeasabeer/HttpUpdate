@@ -48,8 +48,23 @@ WiFiClient _mqttclient;
 String otaurl = String("");
 const char *OTA_UPDATE_TOPIC = "my-device/ota";
 
-void display_ota_ip(const char *ip);
 void OnMessageCB(String &topic, String &payload);
+
+void httpupdate_started_cb() {
+  Serial.println("Firmware OTA update started");
+}
+void httpupdate_finished_cb() {
+  Serial.println("Firmware OTA update OK\nReboot");
+  delay(1000);
+}
+void httpupdate_progress_cb(int cur, int total) {
+  int p;
+  p = (cur / (total / 100));
+  Serial.printf("Progress: %u%%\r", p);
+}
+void httpupdate_error_cb(int err) {
+  Serial.printf("Firmware OTA update fatal error\nCode: %d\n", err);
+}
 
 void setup() {
   Serial.begin(115200);
@@ -85,7 +100,16 @@ void loop() {
     mqtt.unsubscribe(OTA_UPDATE_TOPIC);
     mqtt.publish(OTA_UPDATE_TOPIC, "", true, 1);
     mqtt.disconnect();
-    esp32Update.httpUpdate((char *)otaurl.c_str(), &ota_callback);
+    esp32update.onStart(httpupdate_started_cb);
+    esp32update.onEnd(httpupdate_finished_cb);
+    esp32update.onProgress(httpupdate_progress_cb);
+    esp32update.onError(httpupdate_error_cb);
+    esp32update.setWatchdog(3*60*1000);
+    esp32Update.httpUpdate((char *)otaurl.c_str(), false);
+    // if we go past this point, the httpupdate didn't succeed: so resume back to normal
+    Serial.println("Resuming normal operation");
+    otaurl="";
+    esp32update.stopWatchdog();
   }
   // Put your own application loop code after this line
 
@@ -117,13 +141,4 @@ void OnMessageCB(String &topic, String &payload) {
         otaurl = doc["url"].as<String>();
     }
   }
-}
-
-void display_ota_ip(const char *ip) {
-
-  // Put your own IP address display code after this line
-  // It can be a Serial print to the console (which is already done by the MyOwnOTA library),
-  // a print out on a LCD display or whatever else display.
-  // It can be through a message sent to Telegram, to a Gotify server: possibilties are endless
-  Serial.printf("Ready for OTA connection on: %s/n", ip);
 }
