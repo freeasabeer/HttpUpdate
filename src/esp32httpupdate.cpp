@@ -1,26 +1,20 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <Update.h>
-#include "httpupdate.h"
+#include "esp32httpupdate.h"
 
-static void (*cb)(const char *s) = nullptr;
-static void workaround(ESP32HttpUpdate *ptr) {
-  cb = ptr->_cbLegacy;
-}
-static void cbHelper() {
-  if (cb) cb("OTA start");
-}
 
 // Public methods
-ESP32HttpUpdate::ESP32HttpUpdate() {
+ESP32HttpUpdate::ESP32HttpUpdate(int httpClientTimeout) {
   _CA_cert = nullptr;
   _use_insecure = false;
   _client = nullptr;
+  _httpUpdate = new HTTPUpdate(httpClientTimeout);
 }
-ESP32HttpUpdate::ESP32HttpUpdate(Client &client) {
+ESP32HttpUpdate::ESP32HttpUpdate(Client &client, int httpClientTimeout) {
   _CA_cert = nullptr;
   _use_insecure = false;
   _client = &client;
+  _httpUpdate = new HTTPUpdate(httpClientTimeout);
 }
 
 void ESP32HttpUpdate::setCACert(const char *rootCA) {
@@ -32,16 +26,16 @@ void ESP32HttpUpdate::setInsecure() {
 }
 
 void ESP32HttpUpdate::onStart(void (*cbOnStart)(void)) {
-  _cbStart = cbOnStart;
+  _httpUpdate->onStart(cbOnStart);
 }
 void ESP32HttpUpdate::onEnd(void (*cbOnEnd)(void)) {
-  _cbEnd = cbOnEnd;
+  _httpUpdate->onEnd(cbOnEnd);
 }
 void ESP32HttpUpdate::onError(void (*cbOnError)(int e)) {
-  _cbError = cbOnError;
+  _httpUpdate->onError(cbOnError);
 }
 void ESP32HttpUpdate::onProgress(void (*cbOnProgress)(int c, int t)) {
-  _cbProgress = cbOnProgress;
+  _httpUpdate->onProgress(cbOnProgress);
 }
 
 static void ota_watchdog(TimerHandle_t xTimer)  {
@@ -65,33 +59,43 @@ void ESP32HttpUpdate::stopWatchdog() {
   }
 }
 
-void ESP32HttpUpdate::httpUpdate(char *url, void (*cb)(const char* param)) {   // Deprecated, kept for legacy compatibility
-  _cbLegacy = cb;
-  _cbStart = &cbHelper;
-  workaround(this);
-  httpUpdate(url, false);
-}
-
-void ESP32HttpUpdate::httpUpdate(String &url, void (*cb)(const char* param)) { // Deprecated, kept for legacy compatibility
-  httpUpdate((char *)url.c_str(), cb);
-}
-
-
 void ESP32HttpUpdate::httpUpdate(String &url, bool fsimg) {
   httpUpdate((char *)url.c_str(), fsimg);
 }
 
 void ESP32HttpUpdate::httpUpdate(char *url, bool fsimg) {
   url_t url_elts;
-  _fsimg = fsimg;
+  t_httpUpdate_return ret;
+
   parseurl(url, &url_elts);
-  if (_debug) Serial.printf("httpUpdate: %s://%s:%d%s\n",(url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
+
+  const String host = String(url_elts.host);
+  uint16_t port = url_elts.port;
+  const String uri = url_elts.uri;
+
+  if (_debug) Serial.printf("httpUpdate (%s): %s://%s:%d%s\n",(fsimg)?"FSIMG":"FLASH", (url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
+
+  if (_WatchDogTimer)
+    if (xTimerStart(_WatchDogTimer, 0))
+      if (_debug) Serial.println("Watchdog timer started.");
+    else
+      if (_debug) Serial.println("Failed to start Watchdog timer.");
+
   if (_client) {
-      if (_debug) Serial.println("httpUpdate: use provided client");
-      update(*_client, url_elts.host, url_elts.port, url_elts.uri);
+    WiFiClient * wclient =  reinterpret_cast<WiFiClient *>(_client);
+    if (_debug) Serial.println("httpUpdate: use provided client");
+
+    if (fsimg)
+      ret = _httpUpdate->updateSpiffs(*wclient, String(url));
+    else
+      ret = _httpUpdate->update(*wclient, host, port, uri);
+
   } else {
     if (url_elts.ssl) {
       WiFiClientSecure sclient;
+      // Reading data over SSL may be slow, use an adequate timeout (in seconds)
+      sclient.setTimeout(12);
+
       if ((!_use_insecure)&&(_CA_cert)) {
         if (_debug) {Serial.println("httpUpdate: Setting CACert");Serial.println(_CA_cert);}
         sclient.setCACert(_CA_cert);
@@ -99,13 +103,39 @@ void ESP32HttpUpdate::httpUpdate(char *url, bool fsimg) {
         if (_debug) Serial.println("httpUpdate: Setting Insecure");
         sclient.setInsecure();
       }
+
       if (_debug) Serial.println("httpUpdate: starting update with sclient (https)");
-      update(sclient, url_elts.host, url_elts.port, url_elts.uri);
+
+      if (fsimg)
+        ret = _httpUpdate->updateSpiffs(sclient, String(url));
+      else
+        ret = _httpUpdate->update(sclient, host, port, uri);
+
     } else {
       WiFiClient client;
-      Serial.println("httpUpdate: starting update with client (http)");
-      update(client, url_elts.host, url_elts.port, url_elts.uri);
+
+      if (_debug) Serial.println("httpUpdate: starting update with client (http)");
+
+      if (fsimg)
+        ret = _httpUpdate->updateSpiffs(client, String(url));
+      else
+        ret = _httpUpdate->update(client, host, port, uri);
     }
+  }
+
+  switch (ret) {
+    case HTTP_UPDATE_FAILED:
+      Serial.printf("HTTP_UPDATE_FAILED Error (%d): %s\n", _httpUpdate->getLastError(), _httpUpdate->getLastErrorString().c_str());
+      break;
+
+    case HTTP_UPDATE_NO_UPDATES:
+      Serial.println("HTTP_UPDATE_NO_UPDATES");
+      break;
+
+    case HTTP_UPDATE_OK:
+      Serial.println("HTTP_UPDATE_OK");
+      if (fsimg) ESP.restart();
+      break;
   }
 }
 
@@ -137,11 +167,7 @@ void ESP32HttpUpdate::parseurl(char *url, url_t *url_elts) {
   *url_elts->uri = '/';
 }
 
-// Utility to extract header value from headers
-String ESP32HttpUpdate::getHeaderValue(String header, String headerName) {
-  return header.substring(strlen(headerName.c_str()));
-}
-
+#if 0
 void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *uri) {
 
   long contentLength = 0;
@@ -302,3 +328,4 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
   }
   if (host) free(host);
 }
+#endif
