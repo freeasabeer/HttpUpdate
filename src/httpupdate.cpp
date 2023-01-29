@@ -2,6 +2,7 @@
 #include <WiFiClientSecure.h>
 #include <Update.h>
 #include "httpupdate.h"
+#include <StreamString.h>
 
 static void (*cb)(const char *s) = nullptr;
 static void workaround(ESP32HttpUpdate *ptr) {
@@ -85,7 +86,7 @@ void ESP32HttpUpdate::httpUpdate(char *url, bool fsimg) {
   url_t url_elts;
   _fsimg = fsimg;
   parseurl(url, &url_elts);
-  if (_debug) Serial.printf("httpUpdate: %s://%s:%d%s\n",(url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
+  if (_debug) Serial.printf("httpUpdate (%s): %s://%s:%d%s\n", (fsimg)?"FSIMG":"FLASH", (url_elts.ssl)?"https":"http", url_elts.host, url_elts.port, url_elts.uri);
   if (_client) {
       if (_debug) Serial.println("httpUpdate: use provided client");
       update(*_client, url_elts.host, url_elts.port, url_elts.uri);
@@ -103,7 +104,7 @@ void ESP32HttpUpdate::httpUpdate(char *url, bool fsimg) {
       update(sclient, url_elts.host, url_elts.port, url_elts.uri);
     } else {
       WiFiClient client;
-      Serial.println("httpUpdate: starting update with client (http)");
+      if (_debug) Serial.println("httpUpdate: starting update with client (http)");
       update(client, url_elts.host, url_elts.port, url_elts.uri);
     }
   }
@@ -154,12 +155,12 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
       if (_debug) Serial.println("Failed to start Watchdog timer.");
 
 
-  Serial.printf("Connecting to: %s:%d\n", host, port);
+  if (_debug) Serial.printf("Connecting to: %s:%d\n", host, port);
   // Connect to server
   if (client.connect(host, port)) {
     // Connection Succeed.
     // Fecthing the bin
-    Serial.println("Fetching Bin: " + String(uri));
+    if (_debug) Serial.println("Fetching Bin: " + String(uri));
 
     // Get the contents of the bin file
     client.print(String("GET ") + uri + " HTTP/1.1\r\n" +
@@ -176,7 +177,7 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
     unsigned long timeout = millis();
     while (client.available() == 0) {
       if (millis() - timeout > 5000) {
-        Serial.println("Client Timeout !");
+        setLastError(ESP32HTTPUPDATE_CLIENT_TIMEOUT);
         client.stop();
         if (host) free(host);
         return;
@@ -220,7 +221,8 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
       // else break and Exit Update
       if (line.startsWith("HTTP/1.1")) {
         if (line.indexOf("200") < 0) {
-          Serial.println("Got a non 200 status code from server. Exiting OTA Update.");
+          setLastError(ESP32HTTPUPDATE_NON_200_STATUS_CODE);
+          client.stop();
           break;
         }
       }
@@ -229,13 +231,13 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
       // Start with content length
       if (line.startsWith("Content-Length: ")) {
         contentLength = atol((getHeaderValue(line, "Content-Length: ")).c_str());
-        Serial.println("Got " + String(contentLength) + " bytes from server");
+        if (_debug) Serial.println("Got " + String(contentLength) + " bytes from server");
       }
 
       // Next, the content type
       if (line.startsWith("Content-Type: ")) {
         String contentType = getHeaderValue(line, "Content-Type: ");
-        Serial.println("Got " + contentType + " payload.");
+        if (_debug) Serial.println("Got " + contentType + " payload.");
         if (contentType == "application/octet-stream") {
           isValidContentType = true;
         }
@@ -245,13 +247,13 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
     // Connect to S3 failed
     // May be try?
     // Probably a choppy network?
-    Serial.println("Connection to " + String(host) + " failed. Please check your setup");
+    setLastError(ESP32HTTPUPDATE_CONNECTION_FAILED);
     // retry??
     // execOTA();
   }
 
   // Check what is the contentLength and if content type is `application/octet-stream`
-  Serial.println("contentLength : " + String(contentLength) + ", isValidContentType : " + String(isValidContentType));
+  if (_debug) Serial.println("contentLength : " + String(contentLength) + ", isValidContentType : " + String(isValidContentType));
 
   // check contentLength and content type
   if (contentLength && isValidContentType) {
@@ -261,44 +263,72 @@ void ESP32HttpUpdate::update(Client &client, char *host, uint16_t port, char *ur
 
     // If yes, begin
     if (canBegin) {
-      Serial.println("Begin OTA. This may take 2 - 5 mins to complete. Things might be quite for a while.. Patience!");
-      if(_cbStart) _cbStart();
+      if (_debug) Serial.println("Begin OTA. This may take 2 - 5 mins to complete. Things might be quite for a while.. Patience!");
+      if (_cbStart) _cbStart();
       // No activity would appear on the Serial monitor
       // So be patient. This may take 2 - 5mins to complete
       size_t written = Update.writeStream(client);
 
       if (written == contentLength) {
-        Serial.println("Written : " + String(written) + " successfully");
+        if (_debug) Serial.println("Written : " + String(written) + " successfully");
       } else {
-        Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Retry?" );
+        _lastError = ESP32HTTPUPDATE_WRITTEN_LESS_CONTENT_LENGTH;
+        if (_debug) Serial.println("Written only : " + String(written) + "/" + String(contentLength) + ". Retry?" );
+        if (_cbError) _cbError(_lastError);
         // retry??
         // execOTA();
       }
 
       if (Update.end()) {
-        Serial.println("OTA done!");
+        if (_debug) Serial.println("OTA done!");
         if (Update.isFinished()) {
           if (_cbEnd) _cbEnd();
-          Serial.println("Update successfully completed. Rebooting.");
+          if (_debug) Serial.println("Update successfully completed. Rebooting.");
           ESP.restart();
         } else {
-          Serial.println("Update not finished? Something went wrong!");
+          setLastError(ESP32HTTPUPDATE_UPDATE_NOT_FINISHED);
         }
       } else {
         uint8_t err = Update.getError();
-        Serial.println("Error Occurred. Error #: " + String(err));
+        _lastError = err;
+        if (_debug) Serial.println("Update Error #: " + String(err));
         if (_cbError) _cbError(err);
       }
     } else {
       // not enough space to begin OTA
       // Understand the partitions and
       // space availability
-      Serial.println("Not enough space to begin OTA");
+      setLastError(ESP32HTTPUPDATE_NOT_ENOUGH_SPACE);
       client.flush();
     }
   } else {
-    Serial.println("There was no content in the response");
+    setLastError(ESP32HTTPUPDATE_EMPTY_SERVER_RESPONSE);
     client.flush();
   }
   if (host) free(host);
+}
+
+int ESP32HttpUpdate::getLastError() {
+    return _lastError;
+}
+
+String ESP32HttpUpdate::getLastErrorString() {
+  if(_lastError == 0) {
+    return String(); // no error
+  }
+
+  // error from Update class
+  if(_lastError > 0) {
+    StreamString error;
+    Update.printError(error);
+    error.trim(); // remove line ending
+    return String("Update error: ") + error;
+  }
+  return _ErrorString[_lastError];
+}
+
+void ESP32HttpUpdate::setLastError(int err) {
+  _lastError = err;
+  if (_debug) Serial.println(_ErrorString[_lastError]);
+  if (_cbError) _cbError(err);
 }

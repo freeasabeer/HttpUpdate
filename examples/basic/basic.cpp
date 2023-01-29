@@ -5,7 +5,7 @@
 #define WIFI_KEY "MyOwnKey"
 
 static int pinOTAvalue;
-ESP32HttpUpdate esp32Update;
+ESP32HttpUpdate esp32update;
 
 void setup() {
   Serial.begin(115200);
@@ -47,17 +47,17 @@ void httpupdate_progress_cb(int cur, int total) {
   Serial.printf("Progress: %u%%\r", p);
 }
 void httpupdate_error_cb(int err) {
-  Serial.printf("Firmware OTA update fatal error\nCode: %d\n", err);
+  Serial.printf("Firmware OTA update fatal error\nCode: %d > %s\n", err, esp32update.getLastErrorString().c_str());
 }
 
 void loop() {
   if (pinOTAvalue == LOW) {
-    esp32Update.setWatchdog(3*60*1000);
+    esp32update.setWatchdog(3*60*1000);
     esp32update.onStart(httpupdate_started_cb);
     esp32update.onEnd(httpupdate_finished_cb);
     esp32update.onProgress(httpupdate_progress_cb);
     esp32update.onError(httpupdate_error_cb);
-    esp32Update.httpUpdate("http://www.myserver.com:8080/device/firmware.bin", false);
+    esp32update.httpUpdate("http://www.myserver.com:8080/device/firmware.bin", false);
     return;
   }
 

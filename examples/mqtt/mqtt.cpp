@@ -42,7 +42,7 @@ emyPxgcYxn/eR44/KJ4EBs+lVDR3veyJm+kXQ99b21/+jh5Xos1AnX5iItreGCc=
 -----END CERTIFICATE-----
 )CERT";
 
-ESP32HttpUpdate esp32Update;
+ESP32HttpUpdate esp32update;
 MQTTClient mqtt;
 WiFiClient _mqttclient;
 String otaurl = String("");
@@ -63,7 +63,7 @@ void httpupdate_progress_cb(int cur, int total) {
   Serial.printf("Progress: %u%%\r", p);
 }
 void httpupdate_error_cb(int err) {
-  Serial.printf("Firmware OTA update fatal error\nCode: %d\n", err);
+  Serial.printf("Firmware OTA update fatal error\nCode: %d > %s\n", err, esp32update.getLastErrorString().c_str());
 }
 
 void setup() {
@@ -105,7 +105,7 @@ void loop() {
     esp32update.onProgress(httpupdate_progress_cb);
     esp32update.onError(httpupdate_error_cb);
     esp32update.setWatchdog(3*60*1000);
-    esp32Update.httpUpdate((char *)otaurl.c_str(), false);
+    esp32update.httpUpdate((char *)otaurl.c_str(), false);
     // if we go past this point, the httpupdate didn't succeed: so resume back to normal
     Serial.println("Resuming normal operation");
     otaurl="";
